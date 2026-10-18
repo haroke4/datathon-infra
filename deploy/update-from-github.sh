@@ -32,7 +32,9 @@ for i in "${!task_dirs[@]}"; do
     fi
     GIT_TERMINAL_PROMPT=0 git -C "$task_dir" fetch origin "$task_branch"
     git -C "$task_dir" merge-base --is-ancestor HEAD "origin/$task_branch" || {
-        echo "Branch in $task_dir has diverged; reconcile it before updating." >&2; exit 1;
+        echo "Local commits in $task_dir are not in origin/$task_branch; merge their pull request before updating." >&2
+        git -C "$task_dir" log --oneline "origin/$task_branch..HEAD"
+        exit 1
     }
     git -C "$task_dir" log --oneline "HEAD..origin/$task_branch"
 done
