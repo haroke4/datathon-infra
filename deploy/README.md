@@ -23,6 +23,54 @@ zone `europe-west3-b`. The existing Google Cloud SSH-in-browser session uses
 `/opt/dathaton_engine_deploy`. Open the VM's SSH button in Google Cloud Console
 using the account that owns this project. No new SSH keys are required.
 
+## GitHub deployment workflow
+
+The VPS sources track these repositories:
+
+| VPS directory | Repository | Branch |
+| --- | --- | --- |
+| `/opt/datathon` | `https://github.com/haroke4/datathon-infra.git` | `main` |
+| `/opt/dathaton_engine_deploy` | `https://github.com/kadysmuktaruly/dathaton_engine.git` | `kadys_model_deploy` |
+
+For a server originally deployed from copied source files, run once:
+
+```bash
+sudo bash /opt/datathon/deploy/connect-github.sh
+```
+
+Enter the GitHub token at the hidden prompt. The token is stored with root-only access
+under `/root/.config/datathon/`; repository URLs and source files contain no credentials.
+The credential helper answers only for these two GitHub repositories. Run subsequent
+Git commands with `sudo` so they use this credential. The bootstrap attaches Git metadata
+without replacing existing files, `.env`, uploads, weights, or Docker volumes. Its final
+status lists any differences between deployed files and GitHub. Review and commit those
+differences before updating; never discard them blindly.
+
+Push changes to a branch and open a pull request against the corresponding branch above.
+After review and merge, use the VPS shell:
+
+```bash
+sudo bash /opt/datathon/deploy/update-from-github.sh check # fetch and inspect both repos
+sudo bash /opt/datathon/deploy/update-from-github.sh web   # pull infra and rebuild frontend
+sudo bash /opt/datathon/deploy/update-from-github.sh all   # pull both and rebuild the stack
+```
+
+The default is `check`. Updates require clean checkouts and fast-forward history;
+concurrent invocations are rejected. Deployment runs only when invoked, after changes
+are accepted on GitHub. Existing model weights and database volumes are retained.
+The same updater can be installed as `/usr/local/sbin/datathon-update`; the default
+source directory is `/opt/datathon` (`DATATHON_SOURCE_DIR` overrides it).
+If a release needs new model weights, prepare them using the installation steps below
+before deploying it. A failed build leaves Git at the new revision; inspect the error
+and rerun after fixing it. An `all` update can interrupt active inference.
+
+The October 18 connection was verified with authenticated fetches from both repositories.
+The token is root-owned with mode `0600`. All four services stayed healthy. Missing
+development files from earlier file transfers were restored from Git, with prior
+differences saved under `/root/.config/datathon/`. The frontend already running on the
+VPS is recorded in PR #2. Its commit and the deployment workflow are merged into
+`main`, preserving the VPS history for fast-forward pulls.
+
 ## Prepare the engine source
 
 Place the engine deployment checkout next to the datathon directory:
