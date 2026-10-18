@@ -1,0 +1,42 @@
+[project]
+name = "cashier-compliance"
+version = "0.1.0"
+description = "Datathon 26 / ForteBank: local AI service that flags cash-desk discipline violations in video"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "fastapi>=0.143",
+    "uvicorn[standard]>=0.54",
+    "python-multipart>=0.0.32",
+    "pydantic-settings>=2.16",
+    "sqlalchemy[asyncio]>=2.1.5",
+    "alembic>=1.20",
+    "aiosqlite>=0.22",
+    "asyncpg>=0.32",
+    "apscheduler>=3.11,<4",
+    "httpx>=0.28,<1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1",
+    "pytest-asyncio>=1.4",
+    "ruff>=0.17",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Backend only; other folders hold teammates' scripts.
+include = ["app/**/*.py", "tests/**/*.py", "migrations/**/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

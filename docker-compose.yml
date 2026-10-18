@@ -1,0 +1,119 @@
+# Server stack: Postgres + API + production frontend.
+#   cp .env.example .env   # set POSTGRES_PASSWORD
+#   docker compose up -d --build
+
+name: datathon
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env
+    environment:
+      APP_ENV: production
+      POSTGRES_HOST: db
+      ENGINE_URL: http://engine:8001
+      ENGINE_API_KEY: ${ENGINE_API_KEY:?set ENGINE_API_KEY in .env}
+      ENGINE_TIMEOUT_SEC: "220"
+      JOB_TIMEOUT_SEC: "240"
+      WORKER_CONCURRENCY: "1"
+      PLAYBACK_THREADS: "2"
+    expose:
+      - "8000"
+    volumes:
+      - appdata:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      engine:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  engine:
+    build:
+      context: ${ENGINE_SOURCE_DIR:-../dathaton_engine_deploy}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      ENGINE_API_KEY: ${ENGINE_API_KEY:?set ENGINE_API_KEY in .env}
+      ENGINE_DEADLINE_S: "210"
+      ENGINE_STARTUP_TIMEOUT_S: "600"
+      ENGINE_VLM_BACKEND: transformers
+      ENGINE_VLM_REPO: Qwen/Qwen3-VL-4B-Instruct
+      ENGINE_USE_VLM: "1"
+      ENGINE_DEVICE: cpu
+      ENGINE_CPU_THREADS: "8"
+      ENGINE_ONNX_THREADS: "2"
+      ENGINE_DETECTOR_PATH: ${ENGINE_DETECTOR_PATH:-}
+      OMP_NUM_THREADS: "8"
+      OPENBLAS_NUM_THREADS: "8"
+      TOKENIZERS_PARALLELISM: "false"
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+      HF_HUB_OFFLINE: "1"
+    expose:
+      - "8001"
+    volumes:
+      - engine-runs:/app/runs
+      - engine-cache:/app/cache
+      - engine-weights:/app/weights
+      - engine-hf:/app/hf
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8001/health',timeout=3)); raise SystemExit(0 if d['ready'] else 1)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 600s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.frontend
+    restart: unless-stopped
+    logging: *logging
+    # Host nginx terminates HTTPS; never publish the app/database directly.
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  appdata:
+  engine-runs:
+  engine-cache:
+  engine-weights:
+  engine-hf:
