@@ -104,7 +104,7 @@ export const Result = memo(function Result({
               <Check size={24} strokeWidth={2} />
             </span>
             <h1>
-              Нарушений
+              Возможных нарушений
               <br />
               не обнаружено
             </h1>

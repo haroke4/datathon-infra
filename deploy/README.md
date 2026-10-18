@@ -118,3 +118,14 @@ and reserved-IP billing continue. The documented reserved address is `35.246.241
 
 The earlier October 18 web/TLS smoke checks used mock inference. This connection has
 separate local integration tests; rerun the live checks above after installing this release.
+
+## Live verification, October 18, 2026
+
+VM: datathon-eu, zone europe-west3-b, project project-4cdf6fc1-d81c-4044-855.
+Google Cloud SSH-in-browser user: hadismuktar06. No new SSH keys were added.
+All four services healthy. Public API returns kadys-model. Full Qwen VLM and
+fine-tuned detector loaded. Two synthetic 3-second gray videos finished in FIFO
+order at 29.2 and 55.4 seconds from submission, both partial=false. Both playback
+Range requests returned 206. These are wiring checks, not real-video benchmarks.
+Log: /home/hadismuktar06/kadys-live-verification.log.
+Runtime version is recorded in /opt/dathaton_engine_deploy/DEPLOY_REVISION.

@@ -595,7 +595,7 @@ export default function App() {
       <span className="sr-only" role="status" aria-live="polite">
         {selectedId && review?.job.job_id === selectedId
           ? review.job.verdict === 'no_violation'
-            ? 'Нарушений не обнаружено.'
+            ? 'Возможных нарушений не обнаружено.'
             : `Возможных нарушений: ${review.job.violations?.length || 0}.`
           : ''}
       </span>
