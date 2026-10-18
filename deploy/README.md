@@ -165,3 +165,5 @@ Rollback sources: `/opt/datathon-before-sources-seek-20261018.tar.gz`.
 Rollback images: `datathon-api:before-sources-seek-20261018` and
 `datathon-web:before-sources-seek-20261018`. Build log:
 `/home/hadismuktar06/sources-seek-build.log`.
+
+Runtime version is recorded in `/opt/dathaton_engine_deploy/DEPLOY_REVISION`.
