@@ -10,10 +10,10 @@ Missing, wrong, empty or duplicate keys return `401 UNAUTHORIZED`. The installer
 creates and preserves a separate `baklashka-ne-prolivay-...` key in `.env`; do not put
 it in frontend variables. All routes share the existing queue and stored results.
 
-When updating an existing deployment, configure `PUBLIC_API_KEY` and rebuild `api` and
-`web` together. Reload web nginx after recreating the API container. Also add the new
-`/api/ui/analyze` rate-limit location from `nginx-host.conf` to the existing host config,
-preserving Certbot's TLS settings. Existing `/api/v1` browser bundles require a reload.
+For this API split, run `sudo bash /opt/datathon/deploy/update-from-github.sh app`.
+It generates a jury key only if missing, rebuilds API and frontend together, reloads
+web nginx, and adds the UI upload rate limit while preserving host TLS settings.
+Existing browser tabs need a reload to load the new `/api/ui` bundle.
 
 ## Current server connection
 
@@ -52,6 +52,7 @@ After review and merge, use the VPS shell:
 ```bash
 sudo bash /opt/datathon/deploy/update-from-github.sh check # fetch and inspect both repos
 sudo bash /opt/datathon/deploy/update-from-github.sh web   # pull infra and rebuild frontend
+sudo bash /opt/datathon/deploy/update-from-github.sh app   # pull infra and rebuild API + frontend
 sudo bash /opt/datathon/deploy/update-from-github.sh all   # pull both and rebuild the stack
 ```
 
