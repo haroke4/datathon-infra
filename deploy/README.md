@@ -39,9 +39,18 @@ sudo bash /opt/datathon/deploy/update-from-github.sh all   # pull both and rebui
 The default is `check`. Updates require clean checkouts and fast-forward history;
 concurrent invocations are rejected. Deployment runs only when invoked, after changes
 are accepted on GitHub. Existing model weights and database volumes are retained.
+The same updater can be installed as `/usr/local/sbin/datathon-update`; the default
+source directory is `/opt/datathon` (`DATATHON_SOURCE_DIR` overrides it).
 If a release needs new model weights, prepare them using the installation steps below
 before deploying it. A failed build leaves Git at the new revision; inspect the error
 and rerun after fixing it. An `all` update can interrupt active inference.
+
+The October 18 connection was verified with authenticated fetches from both repositories.
+The token is root-owned with mode `0600`. All four services stayed healthy. Missing
+development files from earlier file transfers were restored from Git, with prior
+differences saved under `/root/.config/datathon/`. The frontend already running on the
+VPS is recorded in PR #2; merge it with **Create a merge commit** so the VPS's current
+commit remains in `main` history and later pulls can fast-forward.
 
 ## Prepare the engine source
 

@@ -6,7 +6,7 @@ task_mode=${1:-check}
 case $task_mode in check|web|all) ;; *) echo 'Usage: update-from-github.sh [check|web|all]' >&2; exit 1;; esac
 exec 9>/run/lock/datathon-github-deploy.lock
 flock -n 9 || { echo 'Another GitHub deployment is running.' >&2; exit 1; }
-cd "$(dirname "$0")/.."
+cd "${DATATHON_SOURCE_DIR:-/opt/datathon}"
 task_infra=$PWD
 task_engine=$(docker compose config --format json | python3 -c \
     'import json,sys; print(json.load(sys.stdin)["services"]["engine"]["build"]["context"])')
