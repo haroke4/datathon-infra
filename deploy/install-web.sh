@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run as root from a release extracted on the Ubuntu VM.
+# Run as root from the Git checkout on the Ubuntu VM.
 set -euo pipefail
 
 if [[ $(uname -s) != Linux || $EUID != 0 ]]; then

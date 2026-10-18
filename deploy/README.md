@@ -4,6 +4,45 @@ The Compose stack connects the real backend to branch `kadys_model_deploy`. The 
 owns the database queue and dispatches one video at a time. No mock inference is used.
 The existing site remains a public shared demo with no login.
 
+## GitHub deployment workflow
+
+The VPS sources track these repositories:
+
+| VPS directory | Repository | Branch |
+| --- | --- | --- |
+| `/opt/datathon` | `https://github.com/haroke4/datathon-infra.git` | `main` |
+| `/opt/dathaton_engine_deploy` | `https://github.com/kadysmuktaruly/dathaton_engine.git` | `kadys_model_deploy` |
+
+For a server originally deployed from copied source files, run once:
+
+```bash
+sudo bash /opt/datathon/deploy/connect-github.sh
+```
+
+Enter the GitHub token at the hidden prompt. The token is stored with root-only access
+under `/root/.config/datathon/`; repository URLs and source files contain no credentials.
+The credential helper answers only for these two GitHub repositories. Run subsequent
+Git commands with `sudo` so they use this credential. The bootstrap attaches Git metadata
+without replacing existing files, `.env`, uploads, weights, or Docker volumes. Its final
+status lists any differences between deployed files and GitHub. Review and commit those
+differences before updating; never discard them blindly.
+
+Push changes to a branch and open a pull request against the corresponding branch above.
+After review and merge, use the VPS shell:
+
+```bash
+sudo bash /opt/datathon/deploy/update-from-github.sh check # fetch and inspect both repos
+sudo bash /opt/datathon/deploy/update-from-github.sh web   # pull infra and rebuild frontend
+sudo bash /opt/datathon/deploy/update-from-github.sh all   # pull both and rebuild the stack
+```
+
+The default is `check`. Updates require clean checkouts and fast-forward history;
+concurrent invocations are rejected. Deployment runs only when invoked, after changes
+are accepted on GitHub. Existing model weights and database volumes are retained.
+If a release needs new model weights, prepare them using the installation steps below
+before deploying it. A failed build leaves Git at the new revision; inspect the error
+and rerun after fixing it. An `all` update can interrupt active inference.
+
 ## Prepare the engine source
 
 Place the engine deployment checkout next to the datathon directory:
