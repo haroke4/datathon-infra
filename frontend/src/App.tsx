@@ -424,7 +424,7 @@ export default function App() {
                   <DropdownMenuTrigger
                     render={
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         className="model-trigger"
                         disabled={!modelId || uploading}
                         aria-label={`Выбрать модель: ${modelName}`}
@@ -482,7 +482,10 @@ export default function App() {
                         aria-label="О выборе модели"
                       >
                         <Popover.Description>
-                          Никакой разницы нет, это просто прикольчик
+                          Все варианты используют одну и ту же модель с одинаковыми
+                          настройками. Выбор названия не влияет на проверку, её
+                          качество или скорость. FuseTea, CocaCola и Opus6.7 — просто
+                          шуточные названия для настроения.
                         </Popover.Description>
                       </Popover.Popup>
                     </Popover.Positioner>
@@ -595,7 +598,7 @@ export default function App() {
       <span className="sr-only" role="status" aria-live="polite">
         {selectedId && review?.job.job_id === selectedId
           ? review.job.verdict === 'no_violation'
-            ? 'Нарушений не обнаружено.'
+            ? 'Возможных нарушений не обнаружено.'
             : `Возможных нарушений: ${review.job.violations?.length || 0}.`
           : ''}
       </span>

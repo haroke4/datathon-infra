@@ -2,7 +2,9 @@
 
 FastAPI backend connected to `dathaton_engine` branch `kadys_model_deploy`.
 Upload a video, poll its job, and retrieve real engine violations, evidence and annotations.
-The frontend continues to use the backend's existing `/api/v1` contract.
+The frontend uses anonymous `/api/ui/*` routes. Jury routes `POST /api/v1/analyze` and
+`GET /api/v1/jobs/{job_id}` require `X-API-Key` matching server-side `PUBLIC_API_KEY`.
+Both namespaces share the same queue and results.
 
 ## Processing
 
@@ -39,6 +41,7 @@ Configure these values in the backend `.env`:
 ```dotenv
 ENGINE_URL=http://127.0.0.1:8001
 ENGINE_API_KEY=your-shared-private-key
+PUBLIC_API_KEY=your-jury-key
 ENGINE_TIMEOUT_SEC=220
 JOB_TIMEOUT_SEC=240
 WORKER_CONCURRENCY=1

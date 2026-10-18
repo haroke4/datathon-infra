@@ -20,13 +20,13 @@ EVENT = AnnotationEvent(
 
 
 async def upload(client, data=b"fake video", name="video_017.mov", **form) -> str:
-    response = await client.post("/api/v1/analyze", files={"file": (name, data)}, data=form)
+    response = await client.post("/api/ui/analyze", files={"file": (name, data)}, data=form)
     assert response.status_code == 200, response.text
     return response.json()["job_id"]
 
 
 async def get(client, path: str):
-    return (await client.get(f"/api/v1{path}")).json()
+    return (await client.get(f"/api/ui{path}")).json()
 
 
 def error_of(response):
@@ -39,12 +39,62 @@ async def test_models(client):
     }
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "allowed_status"),
+    [("POST", "/api/v1/analyze", 400), ("GET", "/api/v1/jobs/missing", 404)],
+)
+async def test_jury_requires_key(client, monkeypatch, method, path, allowed_status):
+    monkeypatch.setattr(settings, "public_api_key", "baklashka-ne-prolivay-test")
+    response = await client.request(method, path, headers={"X-API-Key": settings.public_api_key})
+    assert response.status_code == allowed_status
+    for headers in (
+        {},
+        {"X-API-Key": "wrong-key"},
+        {"X-API-Key": ""},
+        [("X-API-Key", settings.public_api_key), ("X-API-Key", "wrong-key")],
+    ):
+        response = await client.request(method, path, headers=headers)
+        assert error_of(response) == (401, "UNAUTHORIZED")
+
+
+async def test_jury_key_unconfigured(client, monkeypatch):
+    monkeypatch.setattr(settings, "public_api_key", "")
+    for headers in ({}, {"X-API-Key": "any-key"}):
+        response = await client.get("/api/v1/jobs/missing", headers=headers)
+        assert error_of(response) == (401, "UNAUTHORIZED")
+
+
+async def test_ui_is_anonymous_and_jobs_are_shared(client, monkeypatch):
+    monkeypatch.setattr(settings, "public_api_key", "baklashka-ne-prolivay-test")
+    assert (await client.get("/api/ui/models")).status_code == 200
+    assert (await client.get("/api/ui/models", headers={"X-API-Key": "ignored"})).status_code == 200
+    response = await client.post(
+        "/api/v1/analyze",
+        headers={"X-API-Key": settings.public_api_key},
+        files={"file": ("jury.mov", b"fake video")},
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+    ui_result = await client.get(f"/api/ui/jobs/{job_id}")
+    jury_result = await client.get(
+        f"/api/v1/jobs/{job_id}", headers={"X-API-Key": settings.public_api_key}
+    )
+    assert ui_result.status_code == jury_result.status_code == 200
+    assert ui_result.json() == jury_result.json()
+    assert (await client.get("/api/ui/jobs")).json()["jobs"][0]["job_id"] == job_id
+    ui_job_id = await upload(client)
+    response = await client.get(
+        f"/api/v1/jobs/{ui_job_id}", headers={"X-API-Key": settings.public_api_key}
+    )
+    assert response.status_code == 200
+
+
 async def test_errors_use_contract_format(client):
-    missing = await client.get("/api/v1/jobs/missing")
+    missing = await client.get("/api/ui/jobs/missing")
     assert error_of(missing) == (404, "JOB_NOT_FOUND")
     assert missing.json()["error"]["message"] == "Проверка не найдена."
-    assert error_of(await client.get("/api/v1/jobs/missing/video")) == (404, "JOB_NOT_FOUND")
-    assert error_of(await client.get("/api/v1/nope")) == (404, "NOT_FOUND")
+    assert error_of(await client.get("/api/ui/jobs/missing/video")) == (404, "JOB_NOT_FOUND")
+    assert error_of(await client.get("/api/ui/nope")) == (404, "NOT_FOUND")
 
 
 @pytest.mark.parametrize(
@@ -57,13 +107,13 @@ async def test_errors_use_contract_format(client):
     ],
 )
 async def test_analyze_validation(client, files, form, expected):
-    response = await client.post("/api/v1/analyze", files=files, data=form)
+    response = await client.post("/api/ui/analyze", files=files, data=form)
     assert error_of(response) == expected
 
 
 async def test_analyze_size_limit(client, monkeypatch):
     monkeypatch.setattr(settings, "max_upload_mb", 0)
-    response = await client.post("/api/v1/analyze", files={"file": ("a.mov", b"x")})
+    response = await client.post("/api/ui/analyze", files={"file": ("a.mov", b"x")})
     assert error_of(response) == (413, "FILE_TOO_LARGE")
     assert response.json()["error"]["message"] == "Максимальный размер файла — 0 МБ."
 
@@ -97,7 +147,7 @@ async def test_done_job(client, clip, monkeypatch):
         AsyncMock(return_value=Analysis(duration_sec=3.0, violations=[VIOLATION], events=[EVENT])),
     )
     job_id = await upload(client, clip)
-    assert error_of(await client.get(f"/api/v1/jobs/{job_id}/annotations")) == (
+    assert error_of(await client.get(f"/api/ui/jobs/{job_id}/annotations")) == (
         409,
         "JOB_NOT_READY",
     )
@@ -117,10 +167,10 @@ async def test_done_job(client, clip, monkeypatch):
     }
 
     # The worker made a browser MP4 copy; it is served with Range support.
-    full = await client.get(f"/api/v1/jobs/{job_id}/video")
+    full = await client.get(f"/api/ui/jobs/{job_id}/video")
     assert full.status_code == 200
     assert full.headers["content-type"] == "video/mp4"
-    part = await client.get(f"/api/v1/jobs/{job_id}/video", headers={"Range": "bytes=0-99"})
+    part = await client.get(f"/api/ui/jobs/{job_id}/video", headers={"Range": "bytes=0-99"})
     assert part.status_code == 206
     assert part.headers["accept-ranges"] == "bytes"
     assert part.headers["content-range"].startswith("bytes 0-99/")
@@ -141,7 +191,7 @@ async def test_no_violation_job(client, monkeypatch):
     }
     assert await get(client, f"/jobs/{job_id}/annotations") == {"duration_sec": 3.0, "events": []}
     # No browser copy (not a real video): the original is served.
-    response = await client.get(f"/api/v1/jobs/{job_id}/video")
+    response = await client.get(f"/api/ui/jobs/{job_id}/video")
     assert response.headers["content-type"] == "video/quicktime"
 
 
@@ -165,7 +215,7 @@ async def test_failed_job(client, monkeypatch, code):
     assert body["status"] == "failed"
     assert body["error"]["code"] == code
     assert body["error"]["message"]
-    assert error_of(await client.get(f"/api/v1/jobs/{job_id}/annotations")) == (409, "JOB_FAILED")
+    assert error_of(await client.get(f"/api/ui/jobs/{job_id}/annotations")) == (409, "JOB_FAILED")
 
 
 def test_database_choice():

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import errors, worker
-from app.api import router
+from app.api import jury_router, router
 from app.db import engine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Cashier Compliance API", lifespan=lifespan)
 errors.register(app)
 app.include_router(router)
+app.include_router(jury_router)
 
 
 @app.get("/health")

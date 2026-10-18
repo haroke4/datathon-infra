@@ -1,9 +1,11 @@
 """Response models. See API_CONTRACT.md (frontend) and section 10 of the case (jury)."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
+
+from app.violation_sources import source_entry
 
 Status = Literal["processing", "done", "failed"]
 
@@ -21,12 +23,28 @@ class EvidenceFrame(BaseModel):
     image_base64: str  # JPEG, no "data:" prefix, ~50-150 KB
 
 
+class SourceReference(BaseModel):
+    label: str
+    url: str
+
+
 class Violation(BaseModel):
     code: str | None = None  # catalog code ("B1"), see frontend/src/lib/violation-catalog.ts
     type: str
     timecode_sec: float
     description: str
     evidence_frames: list[EvidenceFrame] = []
+    sources: list[SourceReference] = Field(default_factory=list)
+    source_note: str = ""
+
+    @model_validator(mode="after")
+    def map_catalog_sources(self) -> Self:
+        entry = source_entry(self.code, self.type)
+        if entry is not None:
+            self.code, metadata = entry
+            self.sources = [SourceReference(**source) for source in metadata["sources"]]
+            self.source_note = metadata["source_note"]
+        return self
 
 
 class Box(BaseModel):

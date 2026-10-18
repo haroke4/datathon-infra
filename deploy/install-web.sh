@@ -37,6 +37,14 @@ if ! grep -qE '^ENGINE_API_KEY=.+$' .env; then
     unset task_engine_key
 fi
 
+# Jury routes require this separate secret; the shared browser uses anonymous UI routes.
+if ! grep -qE '^PUBLIC_API_KEY=.+$' .env; then
+    umask 077
+    task_public_key="baklashka-ne-prolivay-$(openssl rand -hex 16)"
+    printf '\nPUBLIC_API_KEY=%s\n' "$task_public_key" >> .env
+    unset task_public_key
+fi
+
 docker compose config --quiet
 task_engine_source=$(docker compose config --format json | python3 -c \
     'import json,sys; print(json.load(sys.stdin)["services"]["engine"]["build"]["context"])')

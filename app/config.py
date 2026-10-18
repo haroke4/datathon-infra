@@ -22,6 +22,8 @@ class Settings(BaseSettings):
 
     data_dir: Path = ROOT_DIR / "data"  # SQLite file + uploaded videos (gitignored)
     max_upload_mb: int = 100  # same limit as the frontend
+    # Required on jury /api/v1 routes; the shared browser uses anonymous /api/ui routes.
+    public_api_key: str = Field(default="", repr=False)
     job_timeout_sec: float = Field(default=240, gt=0)
     # The engine owns one warm model process. Keep queueing here, not in the engine.
     worker_concurrency: int = Field(default=1, ge=1, le=1)

@@ -4,6 +4,25 @@ The Compose stack connects the real backend to branch `kadys_model_deploy`. The 
 owns the database queue and dispatches one video at a time. No mock inference is used.
 The existing site remains a public shared demo with no login.
 
+The frontend uses anonymous `/api/ui/*` routes. The jury uses `POST /api/v1/analyze`
+and `GET /api/v1/jobs/{job_id}`, both requiring `X-API-Key` matching `PUBLIC_API_KEY`.
+Missing, wrong, empty or duplicate keys return `401 UNAUTHORIZED`. The installer
+creates and preserves a separate `baklashka-ne-prolivay-...` key in `.env`; do not put
+it in frontend variables. All routes share the existing queue and stored results.
+
+When updating an existing deployment, configure `PUBLIC_API_KEY` and rebuild `api` and
+`web` together. Reload web nginx after recreating the API container. Also add the new
+`/api/ui/analyze` rate-limit location from `nginx-host.conf` to the existing host config,
+preserving Certbot's TLS settings. Existing `/api/v1` browser bundles require a reload.
+
+## Current server connection
+
+The deployed VM is `datathon-eu`, in project `project-4cdf6fc1-d81c-4044-855`,
+zone `europe-west3-b`. The existing Google Cloud SSH-in-browser session uses
+`hadismuktar06`; application sources are in `/opt/datathon` and
+`/opt/dathaton_engine_deploy`. Open the VM's SSH button in Google Cloud Console
+using the account that owns this project. No new SSH keys are required.
+
 ## Prepare the engine source
 
 Place the engine deployment checkout next to the datathon directory:
@@ -27,8 +46,8 @@ sudo bash deploy/install-web.sh
 The installer preserves existing database credentials, generates a private engine key
 when missing, builds all services, downloads CPU Qwen/detector/pose weights into persistent
 volumes, and waits up to 900 seconds for model startup. It preserves existing TLS setup.
-An engine image or inference benchmark was not run on the local development machine;
-verify full inference and timing on the actual N4A VM after rollout.
+The ARM image and full inference were verified on the N4A VM on October 18, 2026;
+repeat the checks below after future releases.
 
 If deploying without the installer, set a strong `ENGINE_API_KEY` and database password
 in `.env`, then run:
@@ -84,7 +103,7 @@ docker compose logs --tail 100 engine api
 docker compose exec -T engine python -c \
   "import json,urllib.request; print(json.load(urllib.request.urlopen('http://127.0.0.1:8001/health')))"
 curl --fail https://baklashka.toilap.com/health
-curl --fail https://baklashka.toilap.com/api/v1/models
+curl --fail https://baklashka.toilap.com/api/ui/models
 ```
 
 Engine health must show `ready: true`; an idle engine also shows `accepting: true`.
@@ -116,5 +135,33 @@ The VM's 72-hour automatic stop remains enabled. A stopped VM serves no requests
 and reserved-IP billing continue. The documented reserved address is `35.246.241.110`
 (`datathon-baklashka-ip`), with Cloudflare DNS-only and host-managed TLS.
 
-The earlier October 18 web/TLS smoke checks used mock inference. This connection has
-separate local integration tests; rerun the live checks above after installing this release.
+## Verified deployment — October 18, 2026
+
+The public `/api/v1/models` endpoint returns `kadys-model`. Engine health reports
+`ready: true`, Qwen3-VL-4B-Instruct with the Transformers backend, and full VLM enabled.
+The fine-tuned detector is installed in the persistent weights volume. All four
+Compose services are healthy; the existing frontend and database volumes were retained.
+
+Two synthetic 3-second gray videos submitted together completed in FIFO order:
+the first finished at 29.2 seconds and the second at 55.4 seconds from submission.
+Both engine jobs finished with `partial: false`, and both playback Range requests
+returned HTTP 206. These clips verify wiring and scheduling; they are not an accuracy
+or throughput benchmark for real cash-room footage.
+
+The engine runtime includes the container PID 1 startup fix from branch
+`kadys_model_deploy` (commit `3b919163550a723418af96fa0a7b20405fe2bb8e`).
+Local checks passed: 102 engine tests, 26 backend tests, and 8 frontend tests.
+Server verification log: `/home/hadismuktar06/kadys-live-verification.log`.
+
+### Source links and timecode hint rollout — October 18, 2026
+
+Updated `api` and `web` together with `docker compose up -d --no-deps --wait`.
+Both services and the unchanged database/inference services are healthy. Saved results
+now receive source links from the backend catalog; B9 returns all three №53 anchors.
+Violation cards show a seek hint beside the timecode and no checkmark or evidence images.
+Clicking the deployed D6 card was verified to seek playback to 00:48.
+
+Rollback sources: `/opt/datathon-before-sources-seek-20261018.tar.gz`.
+Rollback images: `datathon-api:before-sources-seek-20261018` and
+`datathon-web:before-sources-seek-20261018`. Build log:
+`/home/hadismuktar06/sources-seek-build.log`.

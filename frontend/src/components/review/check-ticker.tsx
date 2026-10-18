@@ -18,7 +18,7 @@ export function CheckTicker() {
   // Decorative: the heading carries a stable screen-reader label instead.
   return (
     <span key={code} className="check-ticker" aria-hidden="true">
-      Проверяется на <span className="check-ticker-code">{code}</span>
+      Проверяем возможное нарушение: <span className="check-ticker-code">{code}</span>
       {title}
     </span>
   )

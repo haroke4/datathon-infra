@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { Check, CircleCheck, Clock3, FileText } from 'lucide-react'
+import { Check, Clock3, FileText } from 'lucide-react'
 import { Player, type PlayerHandle } from './player'
 import { formatTime } from '@/lib/format-time'
 import { violationCode } from '@/lib/violation-catalog'
@@ -104,7 +104,7 @@ export const Result = memo(function Result({
               <Check size={24} strokeWidth={2} />
             </span>
             <h1>
-              Нарушений
+              Возможных нарушений
               <br />
               не обнаружено
             </h1>
@@ -130,6 +130,21 @@ export const Result = memo(function Result({
                 )
                 const active = selected === index
                 const code = violationCode(violation)
+                const sources = violation.sources?.length
+                  ? violation.sources
+                  : annotation?.rule?.url
+                    ? [
+                        {
+                          label: [
+                            annotation.rule.title,
+                            annotation.rule.section,
+                          ]
+                            .filter(Boolean)
+                            .join(', '),
+                          url: annotation.rule.url,
+                        },
+                      ]
+                    : []
                 return (
                   <div
                     key={index}
@@ -151,15 +166,19 @@ export const Result = memo(function Result({
                         .join(' ')}
                       aria-expanded={active}
                       aria-controls={`event-details-${index}`}
+                      aria-describedby={`event-seek-hint-${index}`}
                     >
                       <span className="event-meta">
                         <span className="violation-time">
                           <Clock3 size={13} />
                           {formatTime(violation.timecode_sec)}
                         </span>
-                        {active && (
-                          <CircleCheck size={16} className="event-selected" />
-                        )}
+                        <span
+                          id={`event-seek-hint-${index}`}
+                          className="event-seek-hint"
+                        >
+                          Перейти к моменту
+                        </span>
                       </span>
                       <span className="violation-title">
                         {code && <span className="violation-code">{code}</span>}
@@ -172,15 +191,36 @@ export const Result = memo(function Result({
                         className="event-details"
                       >
                         <p className="violation-description">
-                          {violation.description}
+                          {violation.sources?.length
+                            ? violation.description.replace(
+                                /\s*Норма:[\s\S]*$/,
+                                ''
+                              )
+                            : violation.description}
                         </p>
                         <div className="rule-reference">
+                          {sources.length > 0 && (
+                            <span className="source-label">Источник:</span>
+                          )}
                           <FileText size={14} />
-                          {annotation?.rule ? (
-                            <span>
-                              {annotation.rule.title}
-                              <small>{annotation.rule.section}</small>
-                            </span>
+                          {sources.length > 0 ? (
+                            <div className="source-list" aria-label="Источники">
+                              {sources.map((source) => (
+                                <a
+                                  key={`${source.label}-${source.url}`}
+                                  href={source.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {source.label}
+                                </a>
+                              ))}
+                              {violation.source_note && (
+                                <p className="source-note">
+                                  {violation.source_note}
+                                </p>
+                              )}
+                            </div>
                           ) : (
                             <span>
                               {annotation?.rule_note ||
@@ -188,18 +228,6 @@ export const Result = memo(function Result({
                             </span>
                           )}
                         </div>
-                        {violation.evidence_frames.length > 0 && (
-                          <div className="evidence-frames">
-                            {violation.evidence_frames.map((frame, i) => (
-                              <img
-                                key={i}
-                                loading="lazy"
-                                src={`data:image/jpeg;base64,${frame.image_base64}`}
-                                alt={`Кадр-доказательство ${formatTime(frame.timestamp_sec)}`}
-                              />
-                            ))}
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>

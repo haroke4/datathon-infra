@@ -8,6 +8,7 @@ export type JobSummary = {
   status: Status
   queue_position: number
 }
+export type SourceReference = { label: string; url: string }
 export type Violation = {
   // Catalog code such as "A4"; optional, the jury format only requires type.
   code?: string
@@ -15,6 +16,8 @@ export type Violation = {
   timecode_sec: number
   description: string
   evidence_frames: { timestamp_sec: number; image_base64: string }[]
+  sources?: SourceReference[]
+  source_note?: string
 }
 export type JobResult = {
   job_id: string

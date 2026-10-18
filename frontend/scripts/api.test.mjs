@@ -47,13 +47,13 @@ test('real client uses backend routes, multipart fields, encoded IDs and same-or
     assert.equal(uploaded.job_id, 'accepted-job')
     await api.job('job/with space')
     await api.annotations('job/with space')
-    assert.equal(await api.video('job/with space'), '/api/v1/jobs/job%2Fwith%20space/video')
+    assert.equal(await api.video('job/with space'), '/api/ui/jobs/job%2Fwith%20space/video')
     assert.deepEqual(calls.map(({ url }) => url), [
-      '/api/v1/models',
-      '/api/v1/jobs',
-      '/api/v1/analyze',
-      '/api/v1/jobs/job%2Fwith%20space',
-      '/api/v1/jobs/job%2Fwith%20space/annotations',
+      '/api/ui/models',
+      '/api/ui/jobs',
+      '/api/ui/analyze',
+      '/api/ui/jobs/job%2Fwith%20space',
+      '/api/ui/jobs/job%2Fwith%20space/annotations',
     ])
     const upload = calls[2].options
     assert.equal(upload.method, 'POST')
@@ -69,10 +69,10 @@ test('real client uses backend routes, multipart fields, encoded IDs and same-or
 })
 
 test('API base is configurable and backend errors reach the UI unchanged', async () => {
-  const { api } = await loadApi({ DEV: false, VITE_API_BASE_URL: '/api/v1/' })
+  const { api } = await loadApi({ DEV: false, VITE_API_BASE_URL: '/api/ui/' })
   const originalFetch = globalThis.fetch
   globalThis.fetch = async (url) => {
-    assert.equal(url, '/api/v1/jobs/missing')
+    assert.equal(url, '/api/ui/jobs/missing')
     return Response.json(
       { error: { code: 'JOB_NOT_FOUND', message: 'Проверка не найдена.' } },
       { status: 404 }

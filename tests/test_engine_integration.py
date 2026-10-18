@@ -99,7 +99,7 @@ async def test_scheduler_sends_three_videos_fifo_one_at_a_time(client, engine_ap
     assert annotations["duration_sec"] == 3
     assert annotations["events"][0]["violation_index"] == 0
     assert annotations["events"][0]["box"]["width"] == 0.3
-    playback = await client.get(f"/api/v1/jobs/{ids[0]}/video", headers={"Range": "bytes=0-99"})
+    playback = await client.get(f"/api/ui/jobs/{ids[0]}/video", headers={"Range": "bytes=0-99"})
     assert playback.status_code == 206 and len(playback.content) == 100
 
 

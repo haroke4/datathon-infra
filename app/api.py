@@ -1,10 +1,11 @@
+import secrets
 import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, UploadFile
+from fastapi import APIRouter, Depends, Form, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,8 +31,19 @@ VIDEO_TYPES = {".mov": "video/quicktime", ".mp4": "video/mp4", ".webm": "video/w
 ACTIVE = (JobStatus.QUEUED, JobStatus.PROCESSING)
 HISTORY_LIMIT = 200
 
-# No auth: the service has a single, shared user.
-router = APIRouter(prefix="/api/v1")
+
+async def require_jury_key(request: Request) -> None:
+    keys = request.headers.getlist("x-api-key")
+    if (
+        len(keys) != 1
+        or not settings.public_api_key
+        or not secrets.compare_digest(keys[0].encode(), settings.public_api_key.encode())
+    ):
+        raise ApiError(401, "UNAUTHORIZED", "Отсутствует или неверный API-ключ.")
+
+
+router = APIRouter(prefix="/api/ui")
+jury_router = APIRouter(prefix="/api/v1", dependencies=[Depends(require_jury_key)])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
@@ -87,6 +99,7 @@ async def list_jobs(session: SessionDep) -> JobsResponse:
 
 
 @router.post("/analyze")
+@jury_router.post("/analyze")
 async def analyze(
     session: SessionDep,
     file: UploadFile | None = None,
@@ -120,6 +133,7 @@ async def analyze(
 
 
 @router.get("/jobs/{job_id}", response_model_exclude_none=True)
+@jury_router.get("/jobs/{job_id}", response_model_exclude_none=True)
 async def get_job(job_id: str, session: SessionDep) -> JobResponse:
     job = await _get_job(session, job_id)
     fields = {"job_id": job.id, "status": _api_status(job.status), "queue_position": 0}

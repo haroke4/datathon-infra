@@ -9,12 +9,24 @@ and `VITE_USE_MOCK_API=true`; production builds always call the real backend.
 
 | | |
 |---|---|
-| Base URL | `/api/v1` (frontend `VITE_API_BASE_URL`) |
-| Auth | None. The service has one shared user; no key, cookie or login. In development the Vite proxy forwards `/api/v1` to `BACKEND_URL`. |
+| Base URL | `/api/ui` (frontend `VITE_API_BASE_URL`) |
+| Auth | None on `/api/ui`: shared browser access. In development the Vite proxy forwards `/api/ui` to `BACKEND_URL`. Jury routes under `/api/v1` require `X-API-Key` matching server-side `PUBLIC_API_KEY`. |
 | Content type | JSON responses, `Content-Type: application/json`, UTF-8 |
 | Timestamps | ISO 8601 with timezone, e.g. `"2026-10-18T09:15:00Z"` |
 | Video times | seconds from the start of the video, float (`32.4`) |
 | Client timeouts | 20 s for GET, 120 s for `POST /analyze` |
+
+### Jury API
+
+The jury uses the case's original paths, separate from anonymous browser routes:
+
+- `POST /api/v1/analyze`: multipart `file`, optional `model_id`; returns `job_id` and `status`.
+- `GET /api/v1/jobs/{job_id}`: status and result, with the same response fields as the UI.
+
+Both require `X-API-Key` matching `PUBLIC_API_KEY`. Missing, wrong, empty or duplicate
+key headers return `401 UNAUTHORIZED`. An unset server key rejects all jury requests.
+The jury key stays server-side, separate from `ENGINE_API_KEY`; never put it in `VITE_*`.
+The UI and jury use the same queue, model, stored jobs and result logic.
 
 ### Errors
 
@@ -196,8 +208,10 @@ Job status and, when done, the verdict.
 | `violations[].type` | string | Card title and label on the box over the video |
 | `violations[].timecode_sec` | float | Shown on the card. Clicking the card seeks here |
 | `violations[].description` | string | Card body. Phrase it as a *possible* violation: the UI never says it is confirmed |
-| `violations[].evidence_frames` | array, **always present** (may be `[]`) | |
-| `evidence_frames[].timestamp_sec` | float | Used in the image alt text |
+| `violations[].sources` | array of `{ label, url }` | Backend catalog mapping from the supplied summary table. All sources appear as clickable text on the card, including the three separate B9 anchors. Available for historical jobs and violations without annotation boxes |
+| `violations[].source_note` | string | Context or applicability note from the table; empty when unnecessary |
+| `violations[].evidence_frames` | array, **always present** (may be `[]`) | Retained in the API; screenshots are not displayed in the cards |
+| `evidence_frames[].timestamp_sec` | float | Timestamp of the retained evidence frame |
 | `evidence_frames[].image_base64` | string | **JPEG**, plain base64 **without** a `data:` prefix. All frames arrive in the one `done` response, so keep each one small (~50–150 KB) |
 | `error` | `{ code, message }` | Required when `failed`. `message` is shown on the error screen |
 
@@ -250,7 +264,14 @@ How the frontend uses the times:
   violations.
 - A violation with no events still appears in the list, but has no box and only a thin mark at
   `timecode_sec` on the timeline.
-- The card's rule comes from the first event of that violation.
+- The card's source links come from `violations[].sources`, mapped in the backend by
+  code (or a recognized legacy title when the code is missing). The first annotation's
+  `rule`/`rule_note` is a fallback for responses without catalog sources.
+- `B9` sources are `№53, п.71 пп.9` → `https://adilet.zan.kz/rus/docs/V2600038336#z239`,
+  `№53, п.53` → `https://adilet.zan.kz/rus/docs/V2600038336#z182`, and
+  `№53, п.72` → `https://adilet.zan.kz/rus/docs/V2600038336#z240`.
+- Catalog links and notes are maintained in `app/violation_sources.json`. This covers
+  all 27 table rows; the reference-only D5 entry does not enable D5 detection.
 - `events: []` for `no_violation`.
 
 **Errors:** 404 `JOB_NOT_FOUND`, 409 `JOB_NOT_READY` (Анализ ещё не завершён.)
@@ -259,7 +280,7 @@ How the frontend uses the times:
 
 ## `GET /jobs/{job_id}/video`
 
-The original (or transcoded) video, loaded directly by `<video src="/api/v1/jobs/{job_id}/video">`.
+The original (or transcoded) video, loaded directly by `<video src="/api/ui/jobs/{job_id}/video">`.
 
 - **No custom headers.** A `<video>` element cannot send custom headers; this URL needs none (no auth).
 - **Range requests are required.** Answer `Range: bytes=…` with `206 Partial Content` and send

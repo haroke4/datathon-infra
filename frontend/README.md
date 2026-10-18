@@ -47,11 +47,14 @@ Copy `.env.example` to `.env.local`, set the following values and restart Vite:
 
 ```dotenv
 VITE_USE_MOCK_API=false
-VITE_API_BASE_URL=/api/v1
+VITE_API_BASE_URL=/api/ui
 BACKEND_URL=http://127.0.0.1:8000
 ```
 
-The development proxy forwards `/api/v1` to the backend. The current backend is a shared-user service without authentication. If an authenticated upstream is used later, the proxy can supply `X-API-Key` via server-side `BACKEND_API_KEY`; never put a key in a `VITE_*` variable. In production, serve `dist` and proxy `/api/v1` to the backend on the same origin; Vite's development proxy is not part of the built frontend.
+The development proxy forwards anonymous `/api/ui` requests to the backend. In production,
+serve `dist` and proxy `/api/ui` to the backend on the same origin. The jury uses separate
+`/api/v1/analyze` and `/api/v1/jobs/{job_id}` routes requiring `X-API-Key`. The frontend
+never sends or stores the jury key. Vite's development proxy is not part of the built frontend.
 
 The API client is `src/lib/api.ts`, using the real backend by default. The optional local mock transport is `src/lib/mock-api.ts`. The current backend contract is `../API_CONTRACT.md`, covering request/response schemas, queue semantics and media handling.
 

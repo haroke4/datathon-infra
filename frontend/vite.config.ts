@@ -1,4 +1,4 @@
-// Proxy backend requests without exposing the server API key.
+// Anonymous UI requests use a separate namespace from the authenticated jury API.
 import { resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
@@ -11,10 +11,9 @@ export default defineConfig(({ mode }) => {
     resolve: { alias: { '@': resolve(import.meta.dirname, './src') } },
     server: {
       proxy: env.BACKEND_URL ? {
-        '/api/v1': {
+        '/api/ui': {
           target: env.BACKEND_URL,
           changeOrigin: true,
-          headers: env.BACKEND_API_KEY ? { 'X-API-Key': env.BACKEND_API_KEY } : {},
         },
       } : undefined,
     },

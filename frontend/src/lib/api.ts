@@ -4,7 +4,7 @@ import { mockFetch } from './mock-api'
 // Production must always talk to the backend. Demos are an explicit local opt-in.
 export const isMock =
   import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === 'true'
-const baseUrl = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(
+const baseUrl = (import.meta.env.VITE_API_BASE_URL || '/api/ui').replace(
   /\/$/,
   ''
 )
