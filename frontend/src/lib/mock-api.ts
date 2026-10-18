@@ -1,4 +1,15 @@
-import type { Annotations, JobResult, JobSummary, Model } from './types'
+import type {
+  Analytics,
+  AnalyticsPeriod,
+  Annotations,
+  JobResult,
+  JobSummary,
+  Model,
+  ReviewCounts,
+  ReviewDecision,
+  Violation,
+  ViolationReview,
+} from './types'
 
 // In-memory mock transport. No video or frame leaves the browser.
 type Record = JobSummary & {
@@ -59,6 +70,19 @@ const records: Record[] = [
     clean: true,
   },
 ]
+for (const [index, days] of [3, 5, 8, 12, 18, 25].entries()) {
+  records.push({
+    job_id: `demo-archive-${index}`,
+    filename: `cash_desk_archive_${index + 1}.mov`,
+    created_at: new Date(now - days * 86400000).toISOString(),
+    model_id: 'local-default',
+    status: 'done',
+    queue_position: 0,
+    readyAt: 0,
+    duration: 65,
+    clean: index % 3 === 0,
+  })
+}
 function refresh() {
   const pending = records
     .filter((r) => r.readyAt > Date.now())
@@ -100,6 +124,51 @@ function getDuration(url: string): Promise<number> {
   })
 }
 
+const emptyReviewCounts = (): ReviewCounts => ({
+  pending: 0,
+  confirmed: 0,
+  insufficient_data: 0,
+  rejected: 0,
+})
+const reviewDecisions: ReviewDecision[] = [
+  'pending',
+  'confirmed',
+  'insufficient_data',
+  'rejected',
+]
+const reviewMemory = new Map<string, ViolationReview[]>()
+function readMockReviews(jobId: string): ViolationReview[] {
+  try {
+    const saved: unknown = JSON.parse(
+      localStorage.getItem(`forte.demo-reviews.${jobId}`) || 'null'
+    )
+    if (Array.isArray(saved))
+      return saved.filter(
+        (item) =>
+          item &&
+          typeof item.violation_key === 'string' &&
+          Number.isInteger(item.violation_index) &&
+          reviewDecisions.includes(item.decision)
+      )
+  } catch {
+    /* Tests or private browsing may not expose storage. */
+  }
+  return reviewMemory.get(jobId) || []
+}
+async function mockViolationKey(violation: Violation) {
+  const data = new TextEncoder().encode(
+    JSON.stringify([
+      violation.code || '',
+      violation.type,
+      violation.timecode_sec,
+    ])
+  )
+  return Array.from(
+    new Uint8Array(await crypto.subtle.digest('SHA-256', data)),
+    (byte) => byte.toString(16).padStart(2, '0')
+  ).join('')
+}
+
 export async function mockFetch(
   path: string,
   options?: RequestInit
@@ -120,6 +189,210 @@ export async function mockFetch(
   options?.signal?.throwIfAborted()
   refresh()
   if (path === '/models') return json({ models })
+  const reviewRoute = path.match(
+    /^\/jobs\/([^/]+)\/(reviews|violations\/(\d+)\/review)$/
+  )
+  if (reviewRoute) {
+    const jobId = decodeURIComponent(reviewRoute[1])
+    const response = await mockFetch(
+      `/jobs/${jobId}`,
+      options?.signal ? { signal: options.signal } : undefined
+    )
+    if (!response.ok) return response
+    const job = (await response.json()) as JobResult
+    if (job.status !== 'done')
+      return error(
+        409,
+        'JOB_NOT_READY',
+        'Решения доступны после завершения анализа.'
+      )
+    const saved = readMockReviews(jobId)
+    const reviews: ViolationReview[] = await Promise.all(
+      (job.violations || []).map(async (violation, index) => {
+        const key = await mockViolationKey(violation)
+        return (
+          saved.find(
+            (item) =>
+              item.violation_index === index && item.violation_key === key
+          ) || {
+            violation_index: index,
+            violation_key: key,
+            decision: 'pending',
+            updated_at: null,
+          }
+        )
+      })
+    )
+    options?.signal?.throwIfAborted()
+    if (reviewRoute[2] === 'reviews') return json({ job_id: jobId, reviews })
+    if (options?.method !== 'PUT')
+      return error(405, 'METHOD_NOT_ALLOWED', 'Метод не поддерживается.')
+    const index = Number(reviewRoute[3])
+    if (!reviews[index])
+      return error(404, 'VIOLATION_NOT_FOUND', 'Нарушение не найдено.')
+    let body: { decision?: ReviewDecision; violation_key?: string }
+    try {
+      body = JSON.parse(String(options.body))
+    } catch {
+      return error(422, 'VALIDATION_ERROR', 'Некорректное решение.')
+    }
+    if (!body || !reviewDecisions.includes(body.decision!))
+      return error(422, 'VALIDATION_ERROR', 'Некорректное решение.')
+    if (body.violation_key !== reviews[index].violation_key)
+      return error(
+        409,
+        'RESULT_CHANGED',
+        'Результат изменился. Откройте проверку заново.'
+      )
+    const result = {
+      ...reviews[index],
+      decision: body.decision!,
+      updated_at: new Date().toISOString(),
+    }
+    reviews[index] = result
+    reviewMemory.set(jobId, reviews)
+    try {
+      localStorage.setItem(
+        `forte.demo-reviews.${jobId}`,
+        JSON.stringify(reviews)
+      )
+    } catch {
+      /* In-memory demo still works. */
+    }
+    return json(result)
+  }
+  if (path.startsWith('/analytics?')) {
+    const params = new URLSearchParams(path.split('?')[1])
+    const period = (params.get('period') || 'today') as AnalyticsPeriod
+    const end = new Date()
+    const start = new Date(end)
+    start.setHours(0, 0, 0, 0)
+    const days = { today: 1, week: 7, month: 30 }[period]
+    if (!days) return error(422, 'INVALID_PERIOD', 'Неизвестный период.')
+    start.setDate(start.getDate() - days + 1)
+    const previousStart = new Date(start)
+    previousStart.setDate(previousStart.getDate() - days)
+    const previousEnd = new Date(end)
+    previousEnd.setDate(previousEnd.getDate() - days)
+    const timeline: Analytics['timeline'] = []
+    const stop = new Date(end)
+    stop.setHours(24, 0, 0, 0)
+    const cursor = new Date(start)
+    while (cursor < stop) {
+      timeline.push({ start: cursor.toISOString(), checks: 0, violations: 0 })
+      if (period === 'today') cursor.setTime(cursor.getTime() + 3600000)
+      else cursor.setDate(cursor.getDate() + 1)
+    }
+    const emptySummary = {
+      checks: 0,
+      completed: 0,
+      processing: 0,
+      failed: 0,
+      clean: 0,
+      with_violations: 0,
+      violations: 0,
+      duration_sec: 0,
+    }
+    const data: Analytics = {
+      period,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      summary: { ...emptySummary },
+      reviews: emptyReviewCounts(),
+      comparison: {
+        start: previousStart.toISOString(),
+        end: previousEnd.toISOString(),
+        summary: { ...emptySummary },
+      },
+      hours: Array.from({ length: 24 }, (_, hour) => ({
+        hour,
+        checks: 0,
+        completed: 0,
+        with_violations: 0,
+        violations: 0,
+      })),
+      timeline,
+      categories: [],
+      recent: [],
+    }
+    for (const record of records) {
+      const created = new Date(record.created_at)
+      const isPrevious = created >= previousStart && created <= previousEnd
+      if (!isPrevious && (created < start || created > end)) continue
+      const summary = isPrevious ? data.comparison.summary : data.summary
+      const bucket = isPrevious
+        ? null
+        : [...timeline]
+            .reverse()
+            .find((item) => new Date(item.start) <= created)!
+      summary.checks++
+      if (bucket) bucket.checks++
+      const hour = isPrevious ? null : data.hours[created.getHours()]
+      if (hour) hour.checks++
+      if (record.status !== 'done') {
+        summary.processing++
+        continue
+      }
+      const result = await mockFetch(`/jobs/${record.job_id}`, options)
+      const job = (await result.json()) as JobResult
+      summary.completed++
+      summary.duration_sec += record.duration
+      const violations = job.violations || []
+      summary[violations.length ? 'with_violations' : 'clean']++
+      summary.violations += violations.length
+      if (isPrevious) continue
+      bucket!.violations += violations.length
+      hour!.completed++
+      hour!.violations += violations.length
+      if (violations.length) hour!.with_violations++
+      const seen = new Set<string>()
+      const savedReviews = readMockReviews(record.job_id)
+      const keys = await Promise.all(violations.map(mockViolationKey))
+      violations.forEach((violation, index) => {
+        const decision =
+          savedReviews.find(
+            (item) =>
+              item.violation_index === index &&
+              item.violation_key === keys[index]
+          )?.decision || 'pending'
+        data.reviews[decision]++
+        const key = violation.code || violation.type.toLowerCase()
+        let category = data.categories.find((item) => item.key === key)
+        if (!category) {
+          category = {
+            key,
+            code: violation.code || null,
+            title: violation.type,
+            count: 0,
+            checks: 0,
+            reviews: emptyReviewCounts(),
+          }
+          data.categories.push(category)
+        }
+        category.count++
+        category.reviews[decision]++
+        if (!seen.has(key)) category.checks++
+        seen.add(key)
+        data.recent.push({
+          job_id: record.job_id,
+          filename: record.filename,
+          created_at: record.created_at,
+          violation_index: index,
+          category_key: key,
+          title: violation.type,
+          timecode_sec: violation.timecode_sec,
+          decision,
+        })
+      })
+    }
+    data.categories.sort(
+      (a, b) => b.count - a.count || a.title.localeCompare(b.title)
+    )
+    data.recent.sort((a, b) => b.created_at.localeCompare(a.created_at))
+    data.recent = data.recent.slice(0, 100)
+    return json(data)
+  }
   if (path === '/jobs')
     return json({
       jobs: records.map(

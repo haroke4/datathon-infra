@@ -5,7 +5,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, String, Text
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, String, Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -58,3 +58,22 @@ class Job(Base):
     def playback_path(self) -> Path:
         """Browser-friendly MP4 copy made by the worker; the original is used until it exists."""
         return Path(self.video_path).with_suffix(".play.mp4")
+
+
+class ViolationReview(Base):
+    __tablename__ = "violation_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('pending', 'confirmed', 'insufficient_data', 'rejected')",
+            name="ck_violation_review_decision",
+        ),
+        CheckConstraint("violation_index >= 0", name="ck_violation_review_index"),
+    )
+
+    job_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True
+    )
+    violation_index: Mapped[int] = mapped_column(primary_key=True)
+    violation_key: Mapped[str] = mapped_column(String(64))
+    decision: Mapped[str] = mapped_column(String(24))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

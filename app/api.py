@@ -6,16 +6,20 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile
+from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from app.analytics import Period, collect_analytics
 from app.config import settings
-from app.db import Job, JobStatus, get_session
+from app.db import Job, JobStatus, ViolationReview, get_session, utcnow
 from app.errors import ApiError
 from app.pipeline import MODELS
+from app.reviews import job_reviews, require_completed, violation_key
 from app.schemas import (
+    AnalyticsResponse,
     AnalyzeResponse,
     AnnotationsResponse,
     ErrorInfo,
@@ -24,6 +28,9 @@ from app.schemas import (
     JobSummary,
     Model,
     ModelsResponse,
+    ReviewsResponse,
+    ReviewUpdate,
+    ViolationReviewResponse,
 )
 from app.worker import enqueue
 
@@ -98,6 +105,13 @@ async def list_jobs(session: SessionDep) -> JobsResponse:
     )
 
 
+@router.get("/analytics")
+async def analytics(
+    session: SessionDep, period: Period = "today", timezone: str = "Asia/Almaty"
+) -> AnalyticsResponse:
+    return await collect_analytics(session, period, timezone)
+
+
 @router.post("/analyze")
 @jury_router.post("/analyze")
 async def analyze(
@@ -148,6 +162,54 @@ async def get_job(job_id: str, session: SessionDep) -> JobResponse:
             code=job.error_code or "ANALYSIS_FAILED", message=job.error or ""
         )
     return JobResponse(**fields)
+
+
+@router.get("/jobs/{job_id}/reviews")
+async def get_reviews(job_id: str, session: SessionDep) -> ReviewsResponse:
+    return await job_reviews(session, await _get_job(session, job_id))
+
+
+@router.put("/jobs/{job_id}/violations/{violation_index}/review")
+async def set_review(
+    job_id: str,
+    violation_index: Annotated[int, PathParam(ge=0)],
+    body: ReviewUpdate,
+    session: SessionDep,
+) -> ViolationReviewResponse:
+    job = await _get_job(session, job_id)
+    require_completed(job)
+    violations = job.violations or []
+    if violation_index >= len(violations):
+        raise ApiError(404, "VIOLATION_NOT_FOUND", "Нарушение не найдено.")
+    key = violation_key(violations[violation_index])
+    if key != body.violation_key:
+        raise ApiError(409, "RESULT_CHANGED", "Результат изменился. Откройте проверку заново.")
+    # Atomic upsert prevents concurrent decisions on different cards from overwriting each other.
+    if session.bind.dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert
+    updated = utcnow()
+    statement = insert(ViolationReview).values(
+        job_id=job_id,
+        violation_index=violation_index,
+        violation_key=key,
+        decision=body.decision,
+        updated_at=updated,
+    )
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=["job_id", "violation_index"],
+            set_={"violation_key": key, "decision": body.decision, "updated_at": updated},
+        )
+    )
+    await session.commit()
+    return ViolationReviewResponse(
+        violation_index=violation_index,
+        violation_key=key,
+        decision=body.decision,
+        updated_at=updated,
+    )
 
 
 @router.get("/jobs/{job_id}/annotations")

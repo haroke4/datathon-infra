@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  BarChart3,
   Check,
   Clock3,
   Film,
@@ -9,7 +10,6 @@ import {
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { isMock } from '@/lib/api'
 import { readViewedJobs, writePreference } from '@/lib/preferences'
 import type { JobSummary } from '@/lib/types'
 
@@ -38,11 +38,13 @@ type Props = {
   mobile: boolean
   jobs: JobSummary[]
   selectedId: string | null
+  analyticsActive: boolean
   loading: boolean
   error: string
   onClose: () => void
   onSelect: (id: string) => void
   onUpload: () => void
+  onAnalytics: () => void
   onRetry: () => void
 }
 export function HistoryDrawer({
@@ -50,11 +52,13 @@ export function HistoryDrawer({
   mobile,
   jobs,
   selectedId,
+  analyticsActive,
   loading,
   error,
   onClose,
   onSelect,
   onUpload,
+  onAnalytics,
   onRetry,
 }: Props) {
   const panel = useRef<HTMLElement>(null)
@@ -135,7 +139,6 @@ export function HistoryDrawer({
           <span className="drawer-logo">
             <Film size={18} />
           </span>
-          <h2 id="history-title">История проверок</h2>
           <Button
             ref={closeButton}
             variant="ghost"
@@ -151,12 +154,24 @@ export function HistoryDrawer({
             variant="ghost"
             className="new-upload"
             onClick={onUpload}
-            aria-current={!selectedId ? 'page' : undefined}
+            aria-current={!selectedId && !analyticsActive ? 'page' : undefined}
           >
             <Upload size={16} />
             Загрузить видео
           </Button>
+          <Button
+            variant="ghost"
+            className="new-upload"
+            onClick={onAnalytics}
+            aria-current={analyticsActive ? 'page' : undefined}
+          >
+            <BarChart3 size={17} />
+            Аналитика
+          </Button>
         </div>
+        <h2 id="history-title" className="history-section-title">
+          История проверок
+        </h2>
         <div className="history-groups" aria-busy={loading}>
           {loading && (
             <div
@@ -237,14 +252,6 @@ export function HistoryDrawer({
               <p>Проверок пока нет</p>
               <span>Загруженные видео появятся здесь</span>
             </div>
-          )}
-        </div>
-        <div className="drawer-footer">
-          {isMock && (
-            <p className="mock-note">
-              <span />
-              Демонстрационные данные
-            </p>
           )}
         </div>
       </aside>

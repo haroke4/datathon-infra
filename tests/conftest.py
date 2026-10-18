@@ -10,7 +10,7 @@ import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import delete  # noqa: E402
 
-from app.db import Base, Job, SessionLocal, engine  # noqa: E402
+from app.db import Base, Job, SessionLocal, ViolationReview, engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -26,6 +26,7 @@ async def _schema():
 async def _empty_jobs():
     # Queue positions depend on every job in the table.
     async with SessionLocal() as session:
+        await session.execute(delete(ViolationReview))
         await session.execute(delete(Job))
         await session.commit()
 

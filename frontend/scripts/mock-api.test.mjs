@@ -24,7 +24,7 @@ const upload = (name, model = 'local-default', content = 'test video') => {
 test('models, history, upload validation, serial queue, jury results, annotations and media', async () => {
   try {
     assert.equal((await (await mockFetch('/models')).json()).models.length, 3)
-    assert.equal((await (await mockFetch('/jobs')).json()).jobs.length, 4)
+    assert.equal((await (await mockFetch('/jobs')).json()).jobs.length, 10)
     assert.equal((await upload('notes.txt')).status, 415)
     assert.equal((await upload('empty.mov', 'local-default', '')).status, 400)
     assert.equal((await upload('video.mov', 'missing-model')).status, 400)

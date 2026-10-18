@@ -1,4 +1,14 @@
-import type { Annotations, JobResult, JobSummary, Model } from './types'
+import type {
+  Analytics,
+  AnalyticsPeriod,
+  Annotations,
+  JobResult,
+  JobSummary,
+  Model,
+  ReviewDecision,
+  ReviewsResponse,
+  ViolationReview,
+} from './types'
 import { mockFetch } from './mock-api'
 
 // Production must always talk to the backend. Demos are an explicit local opt-in.
@@ -48,6 +58,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // Reopening a completed check reuses its video rather than copying a large Blob again.
 const videoUrls = new Map<string, Promise<string | null>>()
 export const api = {
+  analytics: (period: AnalyticsPeriod, signal?: AbortSignal) => {
+    const query = new URLSearchParams({
+      period,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    })
+    return request<Analytics>(`/analytics?${query}`, { signal })
+  },
   models: (signal?: AbortSignal) =>
     request<{ models: Model[] }>('/models', { signal }),
   history: (signal?: AbortSignal) =>
@@ -60,6 +77,25 @@ export const api = {
   },
   job: (id: string, signal?: AbortSignal) =>
     request<JobResult>(`/jobs/${encodeURIComponent(id)}`, { signal }),
+  reviews: (id: string, signal?: AbortSignal) =>
+    request<ReviewsResponse>(`/jobs/${encodeURIComponent(id)}/reviews`, {
+      signal,
+    }),
+  reviewDecision: (
+    id: string,
+    review: ViolationReview,
+    decision: ReviewDecision,
+    signal?: AbortSignal
+  ) =>
+    request<ViolationReview>(
+      `/jobs/${encodeURIComponent(id)}/violations/${review.violation_index}/review`,
+      {
+        method: 'PUT',
+        signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision, violation_key: review.violation_key }),
+      }
+    ),
   annotations: (id: string, signal?: AbortSignal) =>
     request<Annotations>(`/jobs/${encodeURIComponent(id)}/annotations`, {
       signal,

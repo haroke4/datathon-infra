@@ -312,3 +312,84 @@ Gaps 1–11 from the previous review are implemented and covered by `tests/test_
 | Failed job `error.code` | `ANALYSIS_TIMEOUT`, `DECODE_FAILED`, `ANALYSIS_FAILED` |
 | Other error codes | `NOT_FOUND` (unknown route), `VIDEO_NOT_FOUND` (404), `VALIDATION_ERROR` (422), `INTERNAL_ERROR` (500) |
 
+
+## `GET /analytics?period=today&timezone=Asia%2FAlmaty`
+
+UI-only statistics for the analytics page. `period` is `today` (default), `week`
+(last 7 calendar days, including today), or `month` (last 30 calendar days).
+`timezone` is an IANA timezone, defaulting to `Asia/Almaty`; the browser sends its
+own timezone. Dates are grouped by **upload time**, not an inferred incident date.
+
+- `start`, `end`, `timezone`, `period`: selected range, from local midnight through now.
+- `summary`: `checks`, `completed`, `processing` (including queued), `failed`,
+  `clean`, `with_violations`, `violations`, and `duration_sec` (completed videos only).
+- `timeline`: `{ start, checks, violations }` buckets, hourly for today and daily
+  otherwise, including zero buckets. DST days may have 23 or 25 hourly buckets.
+- `categories`: `{ key, code, title, count, checks }`, sorted by occurrence count.
+  Groups use catalog code when present, otherwise normalized type. Repeated
+  occurrences in one video increase `count` but increase `checks` only once.
+- `recent`: up to 100 violations, newest checks first, with `job_id`, `filename`,
+  `created_at`, `violation_index`, `category_key`, `title`, `timecode_sec`. These
+  fields let the UI open the matching violation at its timestamp. No frames or
+  image payloads are returned.
+- `comparison`: `{ start, end, summary }` for the preceding calendar window of the
+  same length (1, 7, or 30 days), cut off at the same local time as the current
+  window. The remaining part of that previous window is excluded. Current
+  counts and events never include comparison jobs.
+- `hours`: 24 `{ hour, checks, completed, with_violations, violations }` records,
+  grouped by upload hour in the selected timezone across the entire current
+  period. Repeated local hours on a DST day are combined here; timeline buckets
+  remain separate.
+
+Aggregates include **all checks in the selected range**, independent of the
+200-job history limit. Only completed checks contribute violations. Failed
+processing is counted separately. The UI refreshes statistics every 30 seconds
+while visible, supports manual refresh, and aborts obsolete requests.
+
+The browser can export a UTF-8 BOM, semicolon-separated CSV report containing
+both summaries, every category/timeline/hour aggregate and the bounded recent
+event list. Table search and filters do not reduce the export. Untrusted cells
+are escaped and spreadsheet formula prefixes are neutralized. Export creates
+no server-side writes. Analytics is loaded on navigation and has a page-local
+error boundary so loading/render failures do not take down video review.
+
+Errors: 400 `INVALID_TIMEZONE`; 422 `VALIDATION_ERROR` for an unsupported period.
+
+## Reviewer decisions (UI only)
+
+`GET /jobs/{job_id}/reviews` returns `{ job_id, reviews }` for completed jobs.
+Each entry has `violation_index`, an opaque `violation_key`, `decision`, and
+`updated_at` (null until a decision is saved). Existing, unreviewed violations
+return `pending`. Clean videos return an empty list. Decisions are shared and
+persist in the `violation_reviews` table, keyed by job and violation index.
+
+`PUT /jobs/{job_id}/violations/{violation_index}/review` accepts JSON:
+
+```json
+{ "decision": "confirmed", "violation_key": "<key from GET reviews>" }
+```
+
+Allowed decisions: `confirmed`, `insufficient_data`, `rejected`, `pending`
+(reset). The response is the updated review entry. Atomic upserts update the
+single current decision, including when different cards are saved concurrently.
+A fingerprint ties the decision to the violation's code, type and timecode;
+stale fingerprints are excluded from reads and analytics. A stale write returns
+409 `RESULT_CHANGED`; unknown jobs/events return 404; unfinished or failed jobs
+return 409 `JOB_NOT_READY`; invalid decisions/indices/keys return 422.
+
+The model's verdict, violations, annotations, video and queue status are not
+modified by reviewing. `/api/v1` responses retain their original contract.
+Analytics adds `reviews: { pending, confirmed, insufficient_data, rejected }`
+for the selected period and each category; recent events include `decision`.
+All model findings remain in the original totals, including rejected ones.
+Decisions are grouped by the upload date of the reviewed video. Totals use all
+findings, independently of the 100-event table limit.
+
+Cards fetch decisions when opened, even when video/results are cached. A failed
+read/write affects only the review controls; an unacknowledged write is never
+shown as saved. Choices do not seek or toggle the card. Comments remain local;
+PDF export reads the latest saved server decisions, and CSV includes decision
+counts and each exported event's decision.
+
+Apply database migration `673dca2b9710` with `alembic upgrade head` before running
+the updated backend. It adds a new table without rewriting existing jobs.

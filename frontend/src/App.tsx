@@ -29,12 +29,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import { CheckTicker } from '@/components/review/check-ticker'
 import { HistoryDrawer } from '@/components/review/history-drawer'
+import { AnalyticsDashboard } from '@/components/review/analytics-entry'
 import {
   Result,
   type CompletedReview,
   type ReviewPosition,
 } from '@/components/review/result'
-import { api, isMock } from '@/lib/api'
+import { api } from '@/lib/api'
 import { listenForFileDrop } from '@/lib/file-drop'
 import {
   readPreference,
@@ -89,7 +90,9 @@ export default function App() {
   )
   const [modelName, setModelName] = useState(() => {
     const saved = readPreference('forte.mock-model')
-    return saved && MOCK_MODEL_NAMES.includes(saved) ? saved : MOCK_MODEL_NAMES[0]
+    return saved && MOCK_MODEL_NAMES.includes(saved)
+      ? saved
+      : MOCK_MODEL_NAMES[0]
   })
   const [modelId, setModelId] = useState('')
   const [modelError, setModelError] = useState('')
@@ -99,6 +102,7 @@ export default function App() {
   const [historyError, setHistoryError] = useState('')
   const [historyAttempt, setHistoryAttempt] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [page, setPage] = useState<'review' | 'analytics'>('review')
   const [job, setJob] = useState<JobResult | null>(null)
   const [review, setReview] = useState<CompletedReview | null>(null)
   const [resultLoading, setResultLoading] = useState(false)
@@ -245,6 +249,7 @@ export default function App() {
 
   const openJob = useCallback(
     (id: string) => {
+      setPage('review')
       if (id === selectedId) return
       navigationVersion.current += 1
       const cached = completed.current.get(id)
@@ -269,6 +274,7 @@ export default function App() {
   )
   const showUpload = useCallback(() => {
     navigationVersion.current += 1
+    setPage('review')
     setSelectedId(null)
     setResultError('')
   }, [])
@@ -328,7 +334,7 @@ export default function App() {
   useEffect(() => {
     dropHandler.current = (files) => {
       if (uploadBusy.current) return
-      if (selectedId) showUpload()
+      if (selectedId || page === 'analytics') showUpload()
       if (files.length > 1) setUploadError('Загружайте по одному видео за раз.')
       else void upload(files[0])
     }
@@ -362,19 +368,51 @@ export default function App() {
         mobile={mobile}
         jobs={history}
         selectedId={selectedId}
+        analyticsActive={page === 'analytics'}
         loading={historyLoading}
         error={historyError}
         onClose={closeDrawer}
         onSelect={openJob}
         onUpload={showUpload}
+        onAnalytics={() => {
+          navigationVersion.current += 1
+          setPage('analytics')
+          setSelectedId(null)
+          if (mobile) closeDrawer()
+          window.scrollTo(0, 0)
+        }}
         onRetry={() => setHistoryAttempt((value) => value + 1)}
       />
       <main
-        className={selectedId ? 'result-main' : 'upload-main'}
+        className={
+          page === 'analytics'
+            ? 'analytics-main'
+            : selectedId
+              ? 'result-main'
+              : 'upload-main'
+        }
         inert={mobile && drawerOpen}
-        aria-busy={selectedId ? resultLoading : uploading}
+        aria-busy={
+          page === 'analytics'
+            ? undefined
+            : selectedId
+              ? resultLoading
+              : uploading
+        }
       >
-        {!selectedId ? (
+        {page === 'analytics' ? (
+          <AnalyticsDashboard
+            onUpload={showUpload}
+            onOpen={(event) => {
+              positions.current.set(event.job_id, {
+                time: event.timecode_sec,
+                selected: event.violation_index,
+              })
+              openJob(event.job_id)
+              window.scrollTo(0, 0)
+            }}
+          />
+        ) : !selectedId ? (
           <div
             className={`upload-form ${dragging && !uploading ? 'is-dragging' : ''}`}
           >
@@ -482,10 +520,10 @@ export default function App() {
                         aria-label="О выборе модели"
                       >
                         <Popover.Description>
-                          Все варианты используют одну и ту же модель с одинаковыми
-                          настройками. Выбор названия не влияет на проверку, её
-                          качество или скорость. FuseTea, CocaCola и Opus6.7 — просто
-                          шуточные названия для настроения.
+                          Все варианты используют одну и ту же модель с
+                          одинаковыми настройками. Выбор названия не влияет на
+                          проверку, её качество или скорость. FuseTea, CocaCola
+                          и Opus6.7 — просто шуточные названия для настроения.
                         </Popover.Description>
                       </Popover.Popup>
                     </Popover.Positioner>
@@ -532,6 +570,8 @@ export default function App() {
           <Result
             key={selectedId}
             {...review}
+            filename={history.find((item) => item.job_id === selectedId)?.filename || selectedId}
+            createdAt={history.find((item) => item.job_id === selectedId)?.created_at}
             initialPosition={
               positions.current.get(selectedId) || EMPTY_POSITION
             }
@@ -588,13 +628,15 @@ export default function App() {
           </div>
         )}
       </main>
-      {dragging && !uploading && (selectedId || (mobile && drawerOpen)) && (
-        <div className="file-drop-overlay" role="status">
-          <Upload size={32} />
-          <strong>Переместите сюда</strong>
-          <span>Отпустите видео, чтобы начать проверку</span>
-        </div>
-      )}
+      {dragging &&
+        !uploading &&
+        (selectedId || page === 'analytics' || (mobile && drawerOpen)) && (
+          <div className="file-drop-overlay" role="status">
+            <Upload size={32} />
+            <strong>Переместите сюда</strong>
+            <span>Отпустите видео, чтобы начать проверку</span>
+          </div>
+        )}
       <span className="sr-only" role="status" aria-live="polite">
         {selectedId && review?.job.job_id === selectedId
           ? review.job.verdict === 'no_violation'
@@ -652,9 +694,6 @@ export default function App() {
             <X size={15} />
           </Button>
         </div>
-      )}
-      {isMock && !drawerOpen && !selectedId && (
-        <span className="standalone-demo-note">Демонстрационные данные</span>
       )}
     </div>
   )

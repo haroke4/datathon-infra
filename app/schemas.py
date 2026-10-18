@@ -120,3 +120,95 @@ class JobResponse(BaseModel):
 class AnnotationsResponse(BaseModel):
     duration_sec: float
     events: list[AnnotationEvent]
+
+
+ReviewDecision = Literal["pending", "confirmed", "insufficient_data", "rejected"]
+
+
+class ReviewUpdate(BaseModel):
+    decision: ReviewDecision
+    violation_key: str = Field(min_length=64, max_length=64)
+
+
+class ViolationReviewResponse(BaseModel):
+    violation_index: int
+    violation_key: str
+    decision: ReviewDecision = "pending"
+    updated_at: datetime | None = None
+
+
+class ReviewsResponse(BaseModel):
+    job_id: str
+    reviews: list[ViolationReviewResponse]
+
+
+class ReviewCounts(BaseModel):
+    pending: int = 0
+    confirmed: int = 0
+    insufficient_data: int = 0
+    rejected: int = 0
+
+
+class AnalyticsSummary(BaseModel):
+    checks: int = 0
+    completed: int = 0
+    processing: int = 0
+    failed: int = 0
+    clean: int = 0
+    with_violations: int = 0
+    violations: int = 0
+    duration_sec: float = 0
+
+
+class AnalyticsBucket(BaseModel):
+    start: datetime
+    checks: int = 0
+    violations: int = 0
+
+
+class AnalyticsCategory(BaseModel):
+    key: str
+    code: str | None = None
+    title: str
+    count: int = 0
+    checks: int = 0
+    reviews: ReviewCounts = Field(default_factory=ReviewCounts)
+
+
+class AnalyticsEvent(BaseModel):
+    job_id: str
+    filename: str
+    created_at: datetime
+    violation_index: int
+    category_key: str
+    title: str
+    timecode_sec: float
+    decision: ReviewDecision = "pending"
+
+
+class AnalyticsComparison(BaseModel):
+    start: datetime
+    end: datetime
+    summary: AnalyticsSummary
+
+
+class AnalyticsHour(BaseModel):
+    hour: int
+    checks: int = 0
+    completed: int = 0
+    with_violations: int = 0
+    violations: int = 0
+
+
+class AnalyticsResponse(BaseModel):
+    period: Literal["today", "week", "month"]
+    timezone: str
+    start: datetime
+    end: datetime
+    summary: AnalyticsSummary
+    timeline: list[AnalyticsBucket]
+    categories: list[AnalyticsCategory]
+    recent: list[AnalyticsEvent]
+    comparison: AnalyticsComparison
+    hours: list[AnalyticsHour]
+    reviews: ReviewCounts = Field(default_factory=ReviewCounts)

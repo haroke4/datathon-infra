@@ -58,8 +58,17 @@ never sends or stores the jury key. Vite's development proxy is not part of the 
 
 The API client is `src/lib/api.ts`, using the real backend by default. The optional local mock transport is `src/lib/mock-api.ts`. The current backend contract is `../API_CONTRACT.md`, covering request/response schemas, queue semantics and media handling.
 
+## PDF review materials
+
+Use **Скачать PDF** in a completed review to download an A4 report containing the video
+filename, every event and timecode, explanations, clickable normative references, evidence
+frames, current reviewer decisions and comments. The download button is shown only for
+checks with possible violations. Missing or invalid frames are identified in the report. Long text paginates.
+Comments are saved per event in this browser; the PDF includes them for sharing.
+The PDF library and bundled Cyrillic font load on demand. Font license: `public/NotoSans-LICENSE.txt`.
+
 ## Deliberate limits
 
 The frontend does not perform inference: it displays the backend's results. The backend currently includes a mock analysis pipeline, so real HTTP requests alone do not establish that model inference is connected. Mock evidence arrays are empty; rule references are explicitly unavailable.
 
-No dashboard, login screens, reports, analytics, batch upload or reviewer actions were added. History and model selection follow the wireframes. The UI can display real evidence JPEGs and rule titles/sections when supplied by a backend. Bounding boxes are static per event interval, without tracking. The 100 MiB limit and 18-second mock delay are implementation choices, not case requirements.
+No login screens or batch upload were added. History and model selection follow the wireframes. The UI can display real evidence JPEGs and rule titles/sections when supplied by a backend. Bounding boxes are static per event interval, without tracking. The 100 MiB limit and 18-second mock delay are implementation choices, not case requirements.

@@ -1,8 +1,20 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { Check, Clock3, FileText } from 'lucide-react'
+import { Check, Clock3, Download, FileText, LoaderCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Player, type PlayerHandle } from './player'
+import { ViolationDecisions } from './violation-decisions'
+import { useViolationReviews } from '@/lib/use-violation-reviews'
+import { api } from '@/lib/api'
 import { formatTime } from '@/lib/format-time'
 import { violationCode } from '@/lib/violation-catalog'
+import { eventDescription, eventSources } from '@/lib/review-event'
+import {
+  EMPTY_REVIEW_NOTE,
+  readReviewNotes,
+  reviewNoteKey,
+  saveReviewNotes,
+  type ReviewNote,
+} from '@/lib/review-notes'
 import type { Annotations, JobResult } from '@/lib/types'
 
 export type ReviewPosition = { time: number; selected: number | null }
@@ -12,6 +24,8 @@ export type CompletedReview = {
   videoUrl: string | null
 }
 type Props = CompletedReview & {
+  filename: string
+  createdAt?: string
   initialPosition: ReviewPosition
   onPositionChange: (id: string, position: ReviewPosition) => void
 }
@@ -20,9 +34,16 @@ export const Result = memo(function Result({
   job,
   annotations,
   videoUrl,
+  filename,
+  createdAt,
   initialPosition,
   onPositionChange,
 }: Props) {
+  const [notes, setNotes] = useState(() => readReviewNotes(job.job_id))
+  const notesRef = useRef(notes)
+  const [exporting, setExporting] = useState(false)
+  const exportBusy = useRef(false)
+  const [exportError, setExportError] = useState('')
   const [selected, setSelected] = useState<number | null>(
     initialPosition.selected
   )
@@ -33,6 +54,7 @@ export const Result = memo(function Result({
   const list = useRef<HTMLDivElement>(null)
   const cards = useRef<(HTMLButtonElement | null)[]>([])
   const violations = job.violations || []
+  const decisions = useViolationReviews(job.job_id, violations.length)
   const onTimeChange = useCallback(
     (time: number) => {
       const visible = annotations.events.filter(
@@ -81,6 +103,74 @@ export const Result = memo(function Result({
     setSelected(index)
     player.current?.seek(violations[index].timecode_sec)
   }
+  const updateNote = (key: string, patch: Partial<ReviewNote>) => {
+    const next = {
+      ...notesRef.current,
+      [key]: { ...(notesRef.current[key] || EMPTY_REVIEW_NOTE), ...patch },
+    }
+    notesRef.current = next
+    setNotes(next)
+    saveReviewNotes(job.job_id, next)
+  }
+  const download = async () => {
+    if (exportBusy.current) return
+    exportBusy.current = true
+    setExporting(true)
+    setExportError('')
+    try {
+      const reportNotes = { ...notesRef.current }
+      if (violations.length) {
+        const current = await api.reviews(job.job_id)
+        if (current.reviews.length !== violations.length)
+          throw new Error('Результат изменился')
+        for (const review of current.reviews) {
+          const key = reviewNoteKey(
+            violations[review.violation_index],
+            review.violation_index
+          )
+          reportNotes[key] = {
+            ...(reportNotes[key] || EMPTY_REVIEW_NOTE),
+            decision: review.decision,
+          }
+        }
+      }
+      const { downloadReviewPdf } = await import('@/lib/review-report')
+      await downloadReviewPdf({
+        job,
+        annotations,
+        filename,
+        createdAt,
+        notes: reportNotes,
+      })
+    } catch {
+      setExportError('Не удалось собрать PDF. Попробуйте ещё раз.')
+    } finally {
+      exportBusy.current = false
+      setExporting(false)
+    }
+  }
+  const exportButton = (
+    <div className="review-export">
+      <Button
+        variant="outline"
+        className="review-export-button"
+        onClick={download}
+        disabled={exporting || decisions.pending.size > 0}
+      >
+        {exporting ? (
+          <LoaderCircle size={14} className="animate-spin" />
+        ) : (
+          <Download size={14} />
+        )}
+        {exporting ? 'Собираем PDF…' : 'Скачать PDF'}
+      </Button>
+      {exportError && (
+        <p className="review-export-error" role="alert">
+          {exportError}
+        </p>
+      )}
+    </div>
+  )
   const clean = job.verdict === 'no_violation'
   return (
     <div className="review-layout">
@@ -120,9 +210,7 @@ export const Result = memo(function Result({
               <h1>Возможные нарушения</h1>
               <span className="count-badge">{violations.length}</span>
             </div>
-            <p className="panel-hint">
-              Выберите событие, чтобы перейти к фрагменту
-            </p>
+            {exportButton}
             <div className="violation-list" ref={list}>
               {violations.map((violation, index) => {
                 const annotation = annotations.events.find(
@@ -130,21 +218,9 @@ export const Result = memo(function Result({
                 )
                 const active = selected === index
                 const code = violationCode(violation)
-                const sources = violation.sources?.length
-                  ? violation.sources
-                  : annotation?.rule?.url
-                    ? [
-                        {
-                          label: [
-                            annotation.rule.title,
-                            annotation.rule.section,
-                          ]
-                            .filter(Boolean)
-                            .join(', '),
-                          url: annotation.rule.url,
-                        },
-                      ]
-                    : []
+                const sources = eventSources(violation, annotation)
+                const noteKey = reviewNoteKey(violation, index)
+                const note = notes[noteKey] || EMPTY_REVIEW_NOTE
                 return (
                   <div
                     key={index}
@@ -191,19 +267,12 @@ export const Result = memo(function Result({
                         className="event-details"
                       >
                         <p className="violation-description">
-                          {violation.sources?.length
-                            ? violation.description.replace(
-                                /\s*Норма:[\s\S]*$/,
-                                ''
-                              )
-                            : violation.description}
+                          {eventDescription(violation, annotation)}
                         </p>
-                        <div className="rule-reference">
-                          {sources.length > 0 && (
-                            <span className="source-label">Источник:</span>
-                          )}
-                          <FileText size={14} />
-                          {sources.length > 0 ? (
+                        {sources.length > 0 && (
+                          <div className="rule-reference">
+                            <span className="source-label">Источники</span>
+                            <FileText size={14} />
                             <div className="source-list" aria-label="Источники">
                               {sources.map((source) => (
                                 <a
@@ -215,21 +284,41 @@ export const Result = memo(function Result({
                                   {source.label}
                                 </a>
                               ))}
-                              {violation.source_note && (
-                                <p className="source-note">
-                                  {violation.source_note}
-                                </p>
-                              )}
                             </div>
-                          ) : (
-                            <span>
-                              {annotation?.rule_note ||
-                                'Нормативный источник не указан.'}
-                            </span>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     )}
+                    <ViolationDecisions
+                      index={index}
+                      review={decisions.reviews.find(
+                        (item) => item.violation_index === index
+                      )}
+                      loading={decisions.loading}
+                      saving={decisions.pending.has(index)}
+                      error={decisions.errors[index] || ''}
+                      loadError={decisions.error}
+                      onSave={(decision) =>
+                        void decisions.save(index, decision)
+                      }
+                      onRetry={decisions.retry}
+                    >
+                      <div className="review-note">
+                        <label htmlFor={`review-comment-${index}`}>
+                          Заметка
+                        </label>
+                        <textarea
+                          id={`review-comment-${index}`}
+                          rows={2}
+                          maxLength={5000}
+                          value={note.comment}
+                          placeholder="Добавьте заметку"
+                          onChange={(event) =>
+                            updateNote(noteKey, { comment: event.target.value })
+                          }
+                        />
+                      </div>
+                    </ViolationDecisions>
                   </div>
                 )
               })}
